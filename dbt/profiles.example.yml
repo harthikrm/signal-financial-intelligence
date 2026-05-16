@@ -1,0 +1,37 @@
+# Copy to `profiles.yml` (gitignored). Section 8.2 — prod `host` is the manual value;
+# for real Cloud SQL over TCP you typically use the instance IP or proxy host, not
+# the connection-name string (Rule-3 amendment logged in plan if you change it).
+signal:
+  target: dev
+  outputs:
+
+    dev:
+      type: postgres
+      # Defaults match host machine (localhost:5433). Docker Compose sets DB_HOST=postgres DB_PORT=5432 for Airflow so in-container dbt hits the `postgres` service.
+      host: "{{ env_var('DB_HOST', 'localhost') }}"
+      port: "{{ env_var('DB_PORT', '5433') | int }}"
+      user: "{{ env_var('DB_USER') }}"
+      password: "{{ env_var('DB_PASSWORD') }}"
+      dbname: "{{ env_var('DB_NAME') }}"
+      schema: public
+      threads: 4
+
+    ci:
+      type: postgres
+      host: "{{ env_var('DB_HOST') }}"
+      port: 5432
+      user: "{{ env_var('DB_USER') }}"
+      password: "{{ env_var('DB_PASSWORD') }}"
+      dbname: "{{ env_var('DB_NAME') }}"
+      schema: ci_test
+      threads: 2
+
+    prod:
+      type: postgres
+      host: "{{ env_var('GCP_CLOUD_SQL_CONNECTION_NAME') }}"
+      port: 5432
+      user: "{{ env_var('DB_USER') }}"
+      password: "{{ env_var('DB_PASSWORD') }}"
+      dbname: "{{ env_var('DB_NAME') }}"
+      schema: public
+      threads: 4

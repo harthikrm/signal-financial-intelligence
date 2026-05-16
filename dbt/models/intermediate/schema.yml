@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: int_company_metrics
+    columns:
+      - name: ticker
+        tests: [not_null]
+
+  - name: int_yoy_growth
+    columns:
+      - name: ticker
+        tests: [not_null]
+
+  - name: int_price_indicators
+    columns:
+      - name: ticker
+        tests: [not_null]

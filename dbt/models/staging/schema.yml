@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: stg_companies
+    columns:
+      - name: ticker
+        tests: [not_null, unique]
+
+  - name: stg_price_daily
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: close
+        tests: [not_null]
+
+  - name: stg_financials_raw
+    columns:
+      - name: ticker
+        tests: [not_null]
+
+  - name: stg_earnings
+    description: "Raw earnings rows from ingestion."
+
+  - name: stg_filings_metadata
+    description: "Raw filings metadata from ingestion."

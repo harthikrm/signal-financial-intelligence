@@ -1,0 +1,16 @@
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.13.4
+pydantic-settings==2.6.1
+python-dotenv==1.0.0
+psycopg2-binary==2.9.9
+slowapi==0.1.9
+openai==1.109.1
+httpx==0.26.0
+sqlalchemy==2.0.25
+cloud-sql-python-connector[pg8000]==1.20.2
+voyageai==0.2.3
+langchain-core==0.3.86
+langchain-openai==0.2.14
+langsmith==0.8.4
+tiktoken==0.12.0
