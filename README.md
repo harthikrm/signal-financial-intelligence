@@ -28,25 +28,25 @@ Data coverage spans roughly **May 2021 → present**, sourced from SEC EDGAR (XB
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │ REST /api/*
 ┌─────────────────────────────────▼───────────────────────────────────────┐
-│                    FastAPI backend (Cloud Run / Docker)                   │
+│                    FastAPI backend (Cloud Run / Docker)                 │
 │   /company  /prices  /sectors  /compare  /chat/query                    │
-│   RAG pipeline · guardrails · rate limiting · optional API key        │
+│   RAG pipeline · guardrails · rate limiting · optional API key          │
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │
 ┌─────────────────────────────────▼───────────────────────────────────────┐
-│              PostgreSQL 15 + pgvector (GCP Cloud SQL / Docker)            │
-│   companies · financials · prices · embeddings · query_logs               │
+│              PostgreSQL 15 + pgvector (GCP Cloud SQL / Docker)          │
+│   companies · financials · prices · embeddings · query_logs             │
 └─────────────────────────────────▲───────────────────────────────────────┘
                                   │
         ┌─────────────────────────┼─────────────────────────┐
         │                         │                         │
 ┌───────▼────────┐     ┌──────────▼──────────┐   ┌────────▼────────┐
-│  Apache Airflow │     │   dbt transforms    │   │  ingestion/     │
-│  DAGs (Docker)  │────▶│  staging → marts    │◀──│  Python library │
-│  initial load   │     │  fct_master_signals │   │  EDGAR·Polygon  │
-│  daily 8-K      │     │                     │   │  embeddings     │
-│  weekly refresh │     │                     │   │                 │
-└─────────────────┘     └─────────────────────┘   └─────────────────┘
+│  Apache Airflow│     │   dbt transforms    │   │  ingestion/     │
+│  DAGs (Docker) │────▶│  staging → marts    │◀──│  Python library │
+│  initial load  │     │  fct_master_signals │   │  EDGAR·Polygon  │
+│  daily 8-K     │     │                     │   │  embeddings     │
+│  weekly refresh│     │                     │   │                 │
+└────────────────┘     └─────────────────────┘   └─────────────────┘
 ```
 
 ---
