@@ -38,8 +38,8 @@ Data coverage spans roughly **May 2021 → present**, sourced from SEC EDGAR (XB
 │   companies · financials · prices · embeddings · query_logs             │
 └─────────────────────────────────▲───────────────────────────────────────┘
                                   │
-        ┌─────────────────────────┼─────────────────────────┐
-        │                         │                         │
+        ┌─────────────────────────┼───────────────────────┐
+        │                         │                       │
 ┌───────▼────────┐     ┌──────────▼──────────┐   ┌────────▼────────┐
 │  Apache Airflow│     │   dbt transforms    │   │  ingestion/     │
 │  DAGs (Docker) │────▶│  staging → marts    │◀──│  Python library │
