@@ -3,22 +3,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 interface Props {
   onSend: (question: string) => void;
   isLoading: boolean;
+  placeholder?: string;
 }
 
-export function ChatInput({ onSend, isLoading }: Props) {
+/** Match send button height so placeholder sits optically centered. */
+const CONTROL_H = 36;
+const LINE_H = 20;
+
+export function ChatInput({
+  onSend,
+  isLoading,
+  placeholder = "Ask anything about markets, companies, or filings...",
+}: Props) {
   const [value, setValue] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
+  const isEmpty = !value.trim();
 
   const resize = useCallback(() => {
     const el = ta.current;
     if (!el) return;
-    const lineHeight = 20;
-    if (!el.value.trim()) {
-      el.style.height = `${lineHeight}px`;
+    if (!el.value) {
+      el.style.height = `${CONTROL_H}px`;
       return;
     }
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, CONTROL_H), 120)}px`;
   }, []);
 
   useEffect(() => {
@@ -32,6 +41,8 @@ export function ChatInput({ onSend, isLoading }: Props) {
     setValue("");
   };
 
+  const disabled = isLoading || !value.trim();
+
   return (
     <div
       style={{
@@ -40,8 +51,9 @@ export function ChatInput({ onSend, isLoading }: Props) {
         alignItems: "center",
         border: "0.5px solid var(--border)",
         borderRadius: 12,
-        padding: "10px 12px",
+        padding: "8px 10px",
         background: "var(--bg-secondary)",
+        boxSizing: "border-box",
       }}
     >
       <textarea
@@ -49,7 +61,7 @@ export function ChatInput({ onSend, isLoading }: Props) {
         rows={1}
         value={value}
         disabled={isLoading}
-        placeholder="Ask anything about markets, companies, or filings..."
+        placeholder={placeholder}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
@@ -65,30 +77,40 @@ export function ChatInput({ onSend, isLoading }: Props) {
           background: "transparent",
           color: "var(--text-primary)",
           fontSize: 14,
-          lineHeight: "20px",
-          minHeight: 20,
+          // Single-line: line-height = control height centers placeholder text.
+          // Multi-line: normal leading + grow with content.
+          lineHeight: isEmpty ? `${CONTROL_H}px` : `${LINE_H}px`,
+          height: CONTROL_H,
+          minHeight: CONTROL_H,
           maxHeight: 120,
           padding: 0,
           margin: 0,
+          boxSizing: "border-box",
           fontFamily: "var(--font-display)",
-          overflow: "hidden",
-          verticalAlign: "middle",
+          overflowY: "auto",
+          display: "block",
         }}
       />
       <button
         type="button"
-        disabled={isLoading || !value.trim()}
+        disabled={disabled}
         onClick={submit}
         style={{
-          width: 36,
-          height: 36,
+          flexShrink: 0,
+          width: CONTROL_H,
+          height: CONTROL_H,
           borderRadius: 8,
           border: "none",
-          cursor: isLoading || !value.trim() ? "default" : "pointer",
+          cursor: disabled ? "default" : "pointer",
           background: "var(--accent)",
           color: "#000",
           fontWeight: 700,
-          opacity: isLoading || !value.trim() ? 0.35 : 1,
+          opacity: disabled ? 0.35 : 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 0,
+          lineHeight: 1,
         }}
         aria-label="Send"
       >
