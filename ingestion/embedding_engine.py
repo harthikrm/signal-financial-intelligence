@@ -1,8 +1,15 @@
 import os
+import time
 import voyageai
 from config import CHUNK_SIZE_TOKENS, CHUNK_OVERLAP_TOKENS
 
 client = voyageai.Client(api_key=os.getenv("VOYAGE_API_KEY"))
+
+# Free tier without a card is ~3 RPM / 10K TPM. Paid unlocks normal limits.
+# Override via env: VOYAGE_EMBED_BATCH_SIZE, VOYAGE_EMBED_SLEEP_SEC
+_BATCH_SIZE = int(os.getenv("VOYAGE_EMBED_BATCH_SIZE", "16"))
+_SLEEP_SEC = float(os.getenv("VOYAGE_EMBED_SLEEP_SEC", "21"))
+_MAX_RETRIES = int(os.getenv("VOYAGE_EMBED_RETRIES", "6"))
 
 FILING_SECTIONS = [
     "Item 1",   # Business
@@ -61,16 +68,46 @@ def embed_chunks(chunks: list) -> list:
     """
     Embed a list of chunks using voyage-finance-2.
     Returns chunks with embedding field added.
-    Processes in batches of 128 (Voyage AI limit).
+    Small batches + sleep so free-tier RPM/TPM limits don't hard-fail.
     """
-    batch_size = 128
-    embedded   = []
+    embedded = []
+    batch_size = max(1, _BATCH_SIZE)
 
     for i in range(0, len(chunks), batch_size):
-        batch    = chunks[i:i + batch_size]
-        texts    = [c["chunk_text"] for c in batch]
-        result   = client.embed(texts, model="voyage-finance-2",
-                                input_type="document")
+        batch = chunks[i : i + batch_size]
+        texts = [c["chunk_text"] for c in batch]
+        result = None
+        last_err = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                if i > 0 or attempt > 0:
+                    time.sleep(
+                        _SLEEP_SEC
+                        if attempt == 0
+                        else min(120.0, _SLEEP_SEC * (2 ** attempt))
+                    )
+                result = client.embed(
+                    texts, model="voyage-finance-2", input_type="document"
+                )
+                break
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                if (
+                    "rate" in msg
+                    or "rpm" in msg
+                    or "tpm" in msg
+                    or "payment method" in msg
+                ):
+                    print(
+                        f"  voyage rate-limit/payment "
+                        f"(attempt {attempt + 1}/{_MAX_RETRIES}); backing off...",
+                        flush=True,
+                    )
+                    continue
+                raise
+        if result is None:
+            raise last_err or RuntimeError("voyage embed failed")
         for chunk, vector in zip(batch, result.embeddings):
             chunk["embedding"] = vector
             embedded.append(chunk)

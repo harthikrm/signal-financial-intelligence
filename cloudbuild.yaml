@@ -1,0 +1,24 @@
+# Build Signal API image without local Docker (Cloud Build).
+# Usage from repo root:
+#   gcloud builds submit --config=cloudbuild.yaml \
+#     --substitutions=_IMAGE=us-central1-docker.pkg.dev/PROJECT/signal/api:latest
+
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/signal-platform-2026-503720/signal/api:latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - backend/Dockerfile
+      - -t
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+timeout: 1200s
+options:
+  logging: CLOUD_LOGGING_ONLY

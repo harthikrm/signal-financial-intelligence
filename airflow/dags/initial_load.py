@@ -82,10 +82,18 @@ def task_ingest_prices():
                         error_message=str(e))
 
 
+def _datapoint_value(section, key):
+    if not section:
+        return None
+    node = section.get(key)
+    if isinstance(node, dict):
+        return node.get("value")
+    return node
+
+
 def task_ingest_earnings():
     """Pull earnings history for all 70 companies."""
     from loaders import get_connection
-    import psycopg2.extras
     for company in COMPANIES:
         ticker = company["ticker"]
         try:
@@ -95,6 +103,11 @@ def task_ingest_earnings():
             conn = get_connection()
             cur  = conn.cursor()
             for e in earnings:
+                # Polygon /vX/reference/financials uses end_date + nested income_statement
+                period_end = e.get("end_date") or e.get("period_of_report_date")
+                if not period_end:
+                    continue
+                income = (e.get("financials") or {}).get("income_statement") or {}
                 cur.execute("""
                     INSERT INTO earnings
                         (ticker, period_end, eps_actual, eps_estimate,
@@ -104,14 +117,15 @@ def task_ingest_earnings():
                     ON CONFLICT (ticker, period_end) DO NOTHING;
                 """, (
                     ticker,
-                    e.get("period_of_report_date"),
-                    e.get("diluted_eps"),
+                    period_end,
+                    _datapoint_value(income, "diluted_earnings_per_share")
+                    or _datapoint_value(income, "basic_earnings_per_share"),
                     None,
                     None,
-                    e.get("revenues"),
+                    _datapoint_value(income, "revenues"),
                     None,
                     e.get("filing_date"),
-                    e.get("timeframe"),
+                    e.get("fiscal_period") or e.get("timeframe"),
                 ))
             conn.commit()
             cur.close()

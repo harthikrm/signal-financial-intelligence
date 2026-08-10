@@ -18,9 +18,8 @@ models:
       - name: master_signal
         tests:
           - accepted_values:
-              arguments:
-                values:
-                  - "STRONG_BUY_OPPORTUNITY"
-                  - "QUALITY_MOMENTUM"
-                  - "RISK_EXIT"
-                  - "MONITOR"
+              values:
+                - "STRONG_BUY_OPPORTUNITY"
+                - "QUALITY_MOMENTUM"
+                - "RISK_EXIT"
+                - "MONITOR"

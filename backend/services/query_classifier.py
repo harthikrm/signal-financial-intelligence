@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from functools import lru_cache
+import time
 from typing import Any
 
 from openai import OpenAI
@@ -15,16 +15,27 @@ _ALLOWED = frozenset(
     {"FILING", "GENERAL", "MULTI_COMPANY", "GUARDRAIL", "OUT_OF_SCOPE"}
 )
 
+# Refresh coverage from DB periodically (Cloud Run keeps process warm;
+# a permanent cache went stale after companies were restored).
+_COVERAGE_TTL_SEC = int(os.getenv("COVERAGE_TICKERS_TTL_SEC", "60"))
+_coverage_cache: tuple[str, ...] = tuple()
+_coverage_cached_at = 0.0
 
-@lru_cache(maxsize=1)
+
 def _coverage_tickers_tuple() -> tuple[str, ...]:
+    global _coverage_cache, _coverage_cached_at
+    now = time.monotonic()
+    if _coverage_cache and (now - _coverage_cached_at) < _COVERAGE_TTL_SEC:
+        return _coverage_cache
     try:
         with db_cursor() as cur:
             cur.execute("SELECT ticker FROM companies ORDER BY ticker")
-            return tuple(r[0] for r in cur.fetchall())
+            _coverage_cache = tuple(r[0] for r in cur.fetchall())
+            _coverage_cached_at = now
+            return _coverage_cache
     except Exception as e:
         logger.warning("coverage tickers load failed: %s", e)
-        return tuple()
+        return _coverage_cache
 
 
 def _classifier_system_prompt() -> str:
@@ -32,7 +43,7 @@ def _classifier_system_prompt() -> str:
     ticker_block = ", ".join(tickers) if tickers else "(no rows in companies table)"
     return (
         "You are a query classifier for Signal, a financial intelligence "
-        "platform covering 70 S&P 500 companies. Classify the user "
+        "platform covering 70 public companies. Classify the user "
         "question into exactly one category and extract any mentioned "
         "tickers from the coverage list provided.\n"
         "Return only valid JSON. No other text.\n"
@@ -43,21 +54,25 @@ def _classifier_system_prompt() -> str:
         f"{ticker_block}\n\n"
         "Category definitions:\n"
         "- GENERAL: finance vocabulary, formulas, ratios, accounting concepts, "
-        "macro or market mechanics WITHOUT needing SEC filing text for a specific "
-        "covered company (e.g. 'What is free cash flow?', 'Explain beta', "
-        "'How does a 10-K differ from a 10-Q?').\n"
-        "- FILING: needs SEC filing excerpts or company-specific facts for one "
-        "or more covered tickers (e.g. NVIDIA risks in latest 10-K).\n"
+        "macro/market mechanics, technical analysis concepts, screening "
+        "frameworks, OR questions about a covered ticker that do NOT need "
+        "SEC filing text (e.g. 'What is free cash flow?', 'Explain RSI', "
+        "'technical analysis on SPOT', 'breakout patterns after a dip').\n"
+        "- FILING: needs SEC filing excerpts or company-specific facts from "
+        "10-K/10-Q/8-K for one or more covered tickers "
+        "(e.g. NVIDIA risks in latest 10-K).\n"
         "- MULTI_COMPANY: compares or ties together 2+ covered tickers using "
         "filings or company-specific facts.\n"
-        "- GUARDRAIL: buy/sell/hold, price targets, legal/tax advice, insider "
-        "trading, or other disallowed requests per typical brokerage research policy.\n"
+        "- GUARDRAIL: explicit buy/sell/hold recommendations, price targets, "
+        "legal/tax advice, or insider trading.\n"
         "- OUT_OF_SCOPE: NOT finance/markets, OR the question is ONLY about "
         "tickers/companies NOT in the coverage list, OR clearly unrelated "
         "(recipes, sports, personal life).\n"
-        "When in doubt between GENERAL and FILING: if the user only wants a "
-        "concept explanation and does not name a covered company needing filing "
-        "facts, choose GENERAL.\n"
+        "Prefer GENERAL over OUT_OF_SCOPE for any markets/TA/finance education "
+        "question. Prefer GENERAL over FILING when the user asks for TA, "
+        "trends, or concepts and does not ask about filing contents.\n"
+        "Map company names to coverage tickers when obvious "
+        "(Spotify→SPOT, NVIDIA→NVDA).\n"
     )
 
 

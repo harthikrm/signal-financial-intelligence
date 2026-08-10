@@ -68,7 +68,7 @@ def get_earnings(ticker: str) -> list:
     data = _get(
         f"/vX/reference/financials",
         params={"ticker": ticker, "limit": 20,
-                "timeframe": "quarterly", "sort": "period_of_report_date"}
+                "timeframe": "quarterly", "sort": "filing_date", "order": "desc"}
     )
     return data.get("results", [])
 

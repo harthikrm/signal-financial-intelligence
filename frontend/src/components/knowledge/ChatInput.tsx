@@ -12,6 +12,11 @@ export function ChatInput({ onSend, isLoading }: Props) {
   const resize = useCallback(() => {
     const el = ta.current;
     if (!el) return;
+    const lineHeight = 20;
+    if (!el.value.trim()) {
+      el.style.height = `${lineHeight}px`;
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
@@ -32,10 +37,10 @@ export function ChatInput({ onSend, isLoading }: Props) {
       style={{
         display: "flex",
         gap: 10,
-        alignItems: "flex-end",
+        alignItems: "center",
         border: "0.5px solid var(--border)",
         borderRadius: 12,
-        padding: "8px 10px",
+        padding: "10px 12px",
         background: "var(--bg-secondary)",
       }}
     >
@@ -60,9 +65,14 @@ export function ChatInput({ onSend, isLoading }: Props) {
           background: "transparent",
           color: "var(--text-primary)",
           fontSize: 14,
-          lineHeight: 1.45,
+          lineHeight: "20px",
+          minHeight: 20,
           maxHeight: 120,
+          padding: 0,
+          margin: 0,
           fontFamily: "var(--font-display)",
+          overflow: "hidden",
+          verticalAlign: "middle",
         }}
       />
       <button

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 from typing import Any, Optional
 
@@ -155,23 +156,51 @@ def answer_query(
     tickers = list(cls.get("tickers") or [])
     k = int(cls.get("k") or 0)
 
+    # Classifier sometimes marks TA / covered-ticker questions as OUT_OF_SCOPE.
+    # Remap those to GENERAL (no filing retrieval) instead of a hard refusal.
     if category == "OUT_OF_SCOPE":
-        latency_ms = int((time.perf_counter() - t0) * 1000)
-        query_logger.log_query(
-            question,
-            _OUT_OF_SCOPE_REPLY,
-            _ticker_context_value(tickers),
-            "classifier",
-            latency_ms,
-            category,
-            0,
-            session_id,
+        cov = frozenset(query_classifier._coverage_tickers_tuple())
+        q_up = question.upper()
+        mentioned = [t for t in cov if re.search(rf"\b{re.escape(t)}\b", q_up)]
+        q_low = question.lower()
+        finance_hints = (
+            "technical",
+            "analysis",
+            "breakout",
+            "rsi",
+            "macd",
+            "support",
+            "resistance",
+            "trend",
+            "stock",
+            "market",
+            "earnings",
+            "revenue",
+            "margin",
+            "valuation",
+            "profit",
         )
-        return {
-            "answer": _OUT_OF_SCOPE_REPLY,
-            "sources": [],
-            "model_used": "classifier",
-        }
+        if mentioned or any(h in q_low for h in finance_hints):
+            category = "GENERAL"
+            tickers = mentioned or tickers
+            k = 0
+        else:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            query_logger.log_query(
+                question,
+                _OUT_OF_SCOPE_REPLY,
+                _ticker_context_value(tickers),
+                "classifier",
+                latency_ms,
+                "OUT_OF_SCOPE",
+                0,
+                session_id,
+            )
+            return {
+                "answer": _OUT_OF_SCOPE_REPLY,
+                "sources": [],
+                "model_used": "classifier",
+            }
 
     if category == "GUARDRAIL":
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -195,13 +224,38 @@ def answer_query(
     context = _format_context(chunks)
     sources = _sources_from_chunks(chunks)
 
+    coverage = query_classifier._coverage_tickers_tuple()
+    q_up = question.upper()
+    # Always surface covered tickers named in the question (classifier may miss them)
+    for t in coverage:
+        if re.search(rf"\b{re.escape(t)}\b", q_up) and t not in tickers:
+            tickers.append(t)
+    coverage_note = (
+        "Signal coverage tickers: " + ", ".join(coverage)
+        if coverage
+        else "Signal coverage tickers: (unavailable)"
+    )
+
     if context:
         user_content = (
+            f"{coverage_note}\n\n"
             "Use these filing excerpts to answer. Cite inline.\n\n"
             f"FILING EXCERPTS:\n{context}\n\nQUESTION: {question}"
         )
+    elif tickers:
+        covered = ", ".join(tickers)
+        user_content = (
+            f"{coverage_note}\n\n"
+            f"NOTE: {covered} IS in Signal's coverage universe. "
+            "No SEC filing excerpts were retrieved for this question "
+            "(embeddings may be empty, or filings are not required). "
+            "Answer from general financial knowledge. "
+            "Do NOT say the company is outside coverage — use the "
+            "no-filing-data disclaimer instead.\n\n"
+            f"QUESTION: {question}"
+        )
     else:
-        user_content = question
+        user_content = f"{coverage_note}\n\nQUESTION: {question}"
 
     model_name = os.getenv("LLM_MODEL_PRODUCTION", "gpt-4o-mini")
     max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1500"))
