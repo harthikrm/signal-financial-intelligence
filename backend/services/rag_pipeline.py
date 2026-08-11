@@ -43,6 +43,11 @@ def _retrieve_chunks(
         logger.warning("embed_query failed: %s", e)
         return []
     vec_literal = "[" + ",".join(str(float(x)) for x in vec) + "]"
+    prefer_latest = bool(
+        re.search(r"\b(latest|most recent|newest|current)\b", question, re.I)
+    )
+    # Over-fetch then re-rank so "latest 10-K" prefers newest filing dates
+    fetch_k = max(k * 4, k) if prefer_latest else k
     rows: list[tuple[Any, ...]] = []
     try:
         with db_cursor() as cur:
@@ -58,7 +63,7 @@ def _retrieve_chunks(
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
-                    (vec_literal, tickers, vec_literal, k),
+                    (vec_literal, tickers, vec_literal, fetch_k),
                 )
             else:
                 cur.execute(
@@ -71,7 +76,7 @@ def _retrieve_chunks(
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
                     """,
-                    (vec_literal, vec_literal, k),
+                    (vec_literal, vec_literal, fetch_k),
                 )
             rows = cur.fetchall()
     except Exception as e:
@@ -89,6 +94,21 @@ def _retrieve_chunks(
                 "similarity": float(r[5]) if r[5] is not None else 0.0,
             }
         )
+    if prefer_latest and out:
+        # Prefer 10-K when the question mentions 10-K; then newest filing_date
+        wants_10k = bool(re.search(r"10-?k", question, re.I))
+
+        def _rank(c: dict[str, Any]) -> tuple:
+            form_boost = 0
+            if wants_10k and str(c.get("filing_type", "")).upper() == "10-K":
+                form_boost = 1
+            return (
+                form_boost,
+                c.get("filing_date") or "",
+                c.get("similarity") or 0.0,
+            )
+
+        out = sorted(out, key=_rank, reverse=True)[:k]
     return out
 
 

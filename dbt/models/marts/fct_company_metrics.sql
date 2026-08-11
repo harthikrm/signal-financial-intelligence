@@ -13,76 +13,109 @@ max_pe AS (
 ttm AS (
     SELECT
         m.ticker,
-        SUM(
-            CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end > mp.max_period_end - INTERVAL '15 months'
-                    AND m.period_end <= mp.max_period_end
+        -- Prefer last ~4 quarters; if no quarterly rows, fall back to latest annual
+        COALESCE(
+            NULLIF(
+                SUM(
+                    CASE
+                        WHEN
+                            m.period_type = 'quarterly'
+                            AND m.period_end > mp.max_period_end - INTERVAL '15 months'
+                            AND m.period_end <= mp.max_period_end
+                            THEN m.revenue
+                        ELSE NULL
+                    END
+                ),
+                0
+            ),
+            MAX(
+                CASE
+                    WHEN m.period_type = 'annual' AND m.period_end = mp.max_period_end
                     THEN m.revenue
-                ELSE 0
-            END
+                END
+            )
         ) AS revenue_ttm,
-        SUM(
-            CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end > mp.max_period_end - INTERVAL '15 months'
-                    AND m.period_end <= mp.max_period_end
+        COALESCE(
+            NULLIF(
+                SUM(
+                    CASE
+                        WHEN
+                            m.period_type = 'quarterly'
+                            AND m.period_end > mp.max_period_end - INTERVAL '15 months'
+                            AND m.period_end <= mp.max_period_end
+                            THEN m.gross_profit
+                        ELSE NULL
+                    END
+                ),
+                0
+            ),
+            MAX(
+                CASE
+                    WHEN m.period_type = 'annual' AND m.period_end = mp.max_period_end
                     THEN m.gross_profit
-                ELSE 0
-            END
+                END
+            )
         ) AS gross_profit_ttm,
-        SUM(
-            CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end > mp.max_period_end - INTERVAL '15 months'
-                    AND m.period_end <= mp.max_period_end
+        COALESCE(
+            NULLIF(
+                SUM(
+                    CASE
+                        WHEN
+                            m.period_type = 'quarterly'
+                            AND m.period_end > mp.max_period_end - INTERVAL '15 months'
+                            AND m.period_end <= mp.max_period_end
+                            THEN m.net_income
+                        ELSE NULL
+                    END
+                ),
+                0
+            ),
+            MAX(
+                CASE
+                    WHEN m.period_type = 'annual' AND m.period_end = mp.max_period_end
                     THEN m.net_income
-                ELSE 0
-            END
+                END
+            )
         ) AS net_income_ttm,
-        SUM(
-            CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end > mp.max_period_end - INTERVAL '15 months'
-                    AND m.period_end <= mp.max_period_end
+        COALESCE(
+            NULLIF(
+                SUM(
+                    CASE
+                        WHEN
+                            m.period_type = 'quarterly'
+                            AND m.period_end > mp.max_period_end - INTERVAL '15 months'
+                            AND m.period_end <= mp.max_period_end
+                            THEN m.free_cash_flow
+                        ELSE NULL
+                    END
+                ),
+                0
+            ),
+            MAX(
+                CASE
+                    WHEN m.period_type = 'annual' AND m.period_end = mp.max_period_end
                     THEN m.free_cash_flow
-                ELSE 0
-            END
+                END
+            )
         ) AS fcf_ttm,
         MAX(
             CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end = mp.max_period_end
-                    THEN m.total_assets
+                WHEN m.period_end = mp.max_period_end THEN m.total_assets
             END
         ) AS total_assets,
         MAX(
             CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end = mp.max_period_end
-                    THEN m.total_equity
+                WHEN m.period_end = mp.max_period_end THEN m.total_equity
             END
         ) AS total_equity,
         MAX(
             CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end = mp.max_period_end
-                    THEN m.total_debt
+                WHEN m.period_end = mp.max_period_end THEN m.total_debt
             END
         ) AS total_debt,
         MAX(
             CASE
-                WHEN
-                    m.period_type = 'quarterly'
-                    AND m.period_end = mp.max_period_end
-                    THEN m.cash
+                WHEN m.period_end = mp.max_period_end THEN m.cash
             END
         ) AS cash
     FROM metrics m

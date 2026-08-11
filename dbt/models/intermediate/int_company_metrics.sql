@@ -56,10 +56,24 @@ computed AS (
 lagged AS (
     SELECT
         *,
-        LAG(revenue) OVER (
-            PARTITION BY ticker
-            ORDER BY period_end
-        ) AS prior_revenue
+        -- YoY: annual → prior year; quarterly → same quarter prior year (lag 4)
+        CASE
+            WHEN period_type = 'annual' THEN
+                LAG(revenue, 1) OVER (
+                    PARTITION BY ticker, period_type
+                    ORDER BY period_end
+                )
+            WHEN period_type = 'quarterly' THEN
+                LAG(revenue, 4) OVER (
+                    PARTITION BY ticker, period_type
+                    ORDER BY period_end
+                )
+            ELSE
+                LAG(revenue, 1) OVER (
+                    PARTITION BY ticker, period_type
+                    ORDER BY period_end
+                )
+        END AS prior_revenue
     FROM computed
 )
 

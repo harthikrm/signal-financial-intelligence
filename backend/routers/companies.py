@@ -69,9 +69,37 @@ def get_metrics(ticker: str) -> dict[str, Any]:
             (t,),
         )
         row = cur.fetchone()
+        cur.execute(
+            """
+            SELECT close FROM price_daily
+            WHERE ticker = %s
+            ORDER BY date DESC NULLS LAST
+            LIMIT 1
+            """,
+            (t,),
+        )
+        price_row = cur.fetchone()
     if not row:
         return {"ticker": t, "data": {}}
     data = _metrics_dict(row, cols)
+    # Enrich valuation fields from shares × last close when missing
+    try:
+        close = float(price_row[0]) if price_row and price_row[0] is not None else None
+        shares = data.get("shares_outstanding")
+        eps = data.get("eps_diluted")
+        if shares is not None and close is not None and data.get("market_cap") is None:
+            data["market_cap"] = float(shares) * close
+        if (
+            eps is not None
+            and close is not None
+            and float(eps) != 0
+            and data.get("pe_ratio") is None
+        ):
+            data["pe_ratio"] = close / float(eps)
+        if close is not None:
+            data["last_close"] = close
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
     return MetricsRow(ticker=t, data=data).model_dump()
 
 
