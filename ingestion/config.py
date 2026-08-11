@@ -130,12 +130,12 @@ XBRL_OVERRIDES = {
 # ── XBRL Fallback Chains ───────────────────────────────────────────────────
 XBRL_FALLBACK_CHAINS = {
     "revenue": [
-        "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
+        "RevenueFromContractWithCustomer",
+        "Revenues",
         "SalesRevenueNet",
         "SalesRevenueGoodsNet",
-        "RevenueFromContractWithCustomer",
         "InterestAndDividendIncomeOperating",
         "RevenuesNetOfInterestExpense",
     ],
