@@ -1,0 +1,6 @@
+# Install from repo root: pip install -r data_verification/requirements.txt
+python-dotenv==1.0.0
+psycopg2-binary==2.9.9
+yfinance>=0.2.40
+pandas>=2.2.0
+requests>=2.31.0

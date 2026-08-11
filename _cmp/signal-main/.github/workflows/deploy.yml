@@ -1,0 +1,278 @@
+name: Signal Deploy Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_DB: signal_ci
+          POSTGRES_USER: signal_user
+          POSTGRES_PASSWORD: signal_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+
+      # ── Checkout ─────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Step 1: dbt tests against CI schema ──────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install dbt-core==1.11.9 dbt-postgres==1.10.0
+
+      - name: Write dbt profiles.yml for CI
+        working-directory: dbt
+        run: |
+          cat > profiles.yml << EOF
+          signal:
+            target: ci
+            outputs:
+              ci:
+                type: postgres
+                host: localhost
+                port: 5432
+                user: signal_user
+                password: signal_ci_password
+                dbname: signal_ci
+                schema: ci_test
+                threads: 2
+          EOF
+
+      - name: Enable pgvector in CI database
+        run: |
+          PGPASSWORD=signal_ci_password psql \
+            -h localhost -U signal_user -d signal_ci \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Create raw tables in CI database
+        run: |
+          PGPASSWORD=signal_ci_password psql \
+            -h localhost -U signal_user -d signal_ci << 'SQL'
+
+          CREATE TABLE IF NOT EXISTS companies (
+            ticker      VARCHAR(10) PRIMARY KEY,
+            name        TEXT NOT NULL,
+            sector      VARCHAR(50),
+            exchange    VARCHAR(10),
+            cik         VARCHAR(20),
+            logo_url    TEXT,
+            created_at  TIMESTAMP DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS financials_raw (
+            id          SERIAL PRIMARY KEY,
+            ticker      VARCHAR(10) NOT NULL,
+            metric_name VARCHAR(50) NOT NULL,
+            period_end  DATE NOT NULL,
+            form        VARCHAR(10),
+            value       NUMERIC,
+            created_at  TIMESTAMP DEFAULT NOW(),
+            UNIQUE(ticker, metric_name, period_end, form)
+          );
+
+          CREATE TABLE IF NOT EXISTS price_daily (
+            id           SERIAL PRIMARY KEY,
+            ticker       VARCHAR(10) NOT NULL,
+            date         DATE NOT NULL,
+            open         NUMERIC,
+            high         NUMERIC,
+            low          NUMERIC,
+            close        NUMERIC NOT NULL,
+            volume       BIGINT,
+            vwap         NUMERIC,
+            transactions INTEGER,
+            created_at   TIMESTAMP DEFAULT NOW(),
+            UNIQUE(ticker, date)
+          );
+
+          CREATE TABLE IF NOT EXISTS earnings (
+            id                  SERIAL PRIMARY KEY,
+            ticker              VARCHAR(10) NOT NULL,
+            period_end          DATE NOT NULL,
+            eps_actual          NUMERIC,
+            eps_estimate        NUMERIC,
+            eps_surprise_pct    NUMERIC,
+            revenue_actual      NUMERIC,
+            revenue_estimate    NUMERIC,
+            announcement_date   DATE,
+            reporting_period    VARCHAR(20),
+            created_at          TIMESTAMP DEFAULT NOW(),
+            UNIQUE(ticker, period_end)
+          );
+
+          CREATE TABLE IF NOT EXISTS filings_metadata (
+            id              SERIAL PRIMARY KEY,
+            ticker          VARCHAR(10) NOT NULL,
+            filing_type     VARCHAR(10) NOT NULL,
+            filing_date     DATE NOT NULL,
+            fiscal_year     INTEGER,
+            fiscal_quarter  VARCHAR(6),
+            document_url    TEXT,
+            embedded        BOOLEAN DEFAULT FALSE,
+            created_at      TIMESTAMP DEFAULT NOW(),
+            UNIQUE(ticker, filing_type, filing_date)
+          );
+
+          CREATE TABLE IF NOT EXISTS embeddings (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            ticker          VARCHAR(10) NOT NULL,
+            filing_type     VARCHAR(10) NOT NULL,
+            filing_date     DATE NOT NULL,
+            fiscal_year     INTEGER,
+            fiscal_quarter  VARCHAR(6),
+            section_label   VARCHAR(100),
+            chunk_index     INTEGER NOT NULL,
+            chunk_text      TEXT NOT NULL,
+            embedding       vector(1024),
+            token_count     INTEGER,
+            created_at      TIMESTAMP DEFAULT NOW(),
+            UNIQUE(ticker, filing_type, filing_date,
+                   section_label, chunk_index)
+          );
+
+          CREATE TABLE IF NOT EXISTS failed_ingestions (
+            id              SERIAL PRIMARY KEY,
+            ticker          VARCHAR(10),
+            metric_name     VARCHAR(50),
+            filing_type     VARCHAR(10),
+            error_type      VARCHAR(50),
+            error_message   TEXT,
+            attempted_at    TIMESTAMP DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS query_logs (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            question        TEXT,
+            answer          TEXT,
+            ticker_context  VARCHAR(10),
+            model_used      VARCHAR(50),
+            tokens_in       INTEGER,
+            tokens_out      INTEGER,
+            latency_ms      INTEGER,
+            classification  VARCHAR(30),
+            retrieved_chunks INTEGER,
+            session_id      VARCHAR(64),
+            created_at      TIMESTAMP DEFAULT NOW()
+          );
+
+          SQL
+
+      - name: Seed companies table for FastAPI tests
+        run: |
+          PGPASSWORD=signal_ci_password psql \
+            -h localhost -U signal_user -d signal_ci << 'SQL'
+          INSERT INTO companies (ticker, name, sector, exchange, cik)
+          VALUES
+            ('NVDA', 'NVIDIA Corporation', 'AI & Semiconductors', 'NASDAQ', '0001045810'),
+            ('AMD',  'Advanced Micro Devices', 'AI & Semiconductors', 'NASDAQ', '0000002488'),
+            ('MSFT', 'Microsoft Corporation', 'Cloud & Infrastructure', 'NASDAQ', '0000789019'),
+            ('JPM',  'JPMorgan Chase', 'Traditional Finance', 'NYSE', '0000019617'),
+            ('TSLA', 'Tesla', 'EV & Energy', 'NASDAQ', '0001318605')
+          ON CONFLICT (ticker) DO NOTHING;
+          SQL
+
+      - name: Run dbt tests against CI schema
+        run: |
+          cd dbt
+          dbt deps --profiles-dir .
+          dbt seed --target ci --profiles-dir .
+          dbt run  --target ci --profiles-dir .
+          dbt test --target ci --profiles-dir .
+
+      # ── Step 2: FastAPI endpoint tests ───────────────────
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run FastAPI tests
+        env:
+          SIGNAL_API_KEY:   ${{ secrets.SIGNAL_API_KEY }}
+          DB_HOST:          localhost
+          DB_PORT:          5432
+          DB_USER:          signal_user
+          DB_PASSWORD:      signal_ci_password
+          DB_NAME:          signal_ci
+          OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          VOYAGE_API_KEY:   ${{ secrets.VOYAGE_API_KEY }}
+          LOGO_DEV_TOKEN:   ${{ secrets.LOGO_DEV_TOKEN }}
+          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
+          LANGCHAIN_PROJECT: signal-development
+          LANGCHAIN_TRACING_V2: "false"
+        run: |
+          cd backend
+          pytest tests/ -v
+
+      # ── Step 3: Build and deploy backend to Cloud Run ────
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            -f backend/Dockerfile \
+            -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/signal-backend/api:${{ github.sha }} \
+            .
+          docker push \
+            us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/signal-backend/api:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy signal-api \
+            --image us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/signal-backend/api:${{ github.sha }} \
+            --region us-central1 \
+            --platform managed \
+            --memory 1Gi \
+            --min-instances 1 \
+            --max-instances 5 \
+            --service-account signal-deployer@signal-platform-2026.iam.gserviceaccount.com \
+            --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_CLOUD_SQL_CONNECTION_NAME=${{ secrets.GCP_CLOUD_SQL_CONNECTION_NAME }},DB_NAME=${{ secrets.DB_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }},SIGNAL_API_KEY=${{ secrets.SIGNAL_API_KEY }},LOGO_DEV_TOKEN=${{ secrets.LOGO_DEV_TOKEN }},LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }},LANGCHAIN_PROJECT=signal-production,LANGCHAIN_TRACING_V2=true,LLM_MODEL_PRODUCTION=gpt-4o-mini,POLYGON_API_KEY_1=${{ secrets.POLYGON_API_KEY_1 }},POLYGON_API_KEY_2=${{ secrets.POLYGON_API_KEY_2 }}" \
+            --add-cloudsql-instances "${{ secrets.GCP_CLOUD_SQL_CONNECTION_NAME }}" --allow-unauthenticated
+
+      # ── Step 4: Deploy frontend to Vercel ────────────────
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy frontend to Vercel
+        working-directory: ./frontend
+        env:
+          VERCEL_TOKEN:      ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN

@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: fct_company_metrics
+    columns:
+      - name: ticker
+        tests: [not_null]
+
+  - name: fct_price_indicators
+    columns:
+      - name: ticker
+        tests: [not_null]
+
+  - name: fct_master_signals
+    columns:
+      - name: ticker
+        tests: [not_null, unique]
+      - name: master_signal
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - "STRONG_BUY_OPPORTUNITY"
+                  - "QUALITY_MOMENTUM"
+                  - "RISK_EXIT"
+                  - "MONITOR"

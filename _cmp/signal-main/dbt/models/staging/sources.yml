@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: signal
+    description: "Raw tables populated by ingestion (public schema)."
+    schema: public
+    tables:
+      - name: financials_raw
+      - name: companies
+      - name: price_daily
+      - name: earnings
+      - name: filings_metadata

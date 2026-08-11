@@ -1,0 +1,28 @@
+name: 'signal'
+version: '1.0.0'
+config-version: 2
+
+profile: 'signal'
+
+model-paths: ["models"]
+seed-paths:  ["seeds"]
+test-paths:  ["tests"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  signal:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+# Large dollar amounts exceed INT4; keep CSV identical to manual §8.4.
+seeds:
+  signal:
+    sample_financials:
+      +column_types:
+        value: bigint
